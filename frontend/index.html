@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ClawCLI — AI chat that actually executes</title>
+<style>
+:root{--bg:#0b0d10;--panel:#12151a;--line:#222831;--txt:#e6e8eb;--mut:#8a93a0;--acc:#7dd3a7;--warn:#f0b35a;--err:#f07a7a;--mono:ui-monospace,"JetBrains Mono",Menlo,monospace}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.55 Inter,system-ui,sans-serif;height:100vh;display:grid;grid-template-rows:auto 1fr auto}
+header{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--line)}
+.brand{font-weight:650;letter-spacing:-.01em}.brand b{color:var(--acc)}.pill{font:12px var(--mono);color:var(--mut);border:1px solid var(--line);padding:3px 10px;border-radius:99px}
+main{overflow:auto;padding:28px 0}.wrap{max-width:860px;margin:0 auto;padding:0 20px}
+.msg{margin:0 0 22px}.user{display:flex;justify-content:flex-end}.user div{background:#1b2230;padding:10px 14px;border-radius:14px 14px 2px 14px;max-width:75%}
+.bot{border-left:2px solid var(--line);padding-left:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin:10px 0;overflow:hidden}
+.card h4{margin:0;padding:9px 14px;font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--mut);border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+.card .b{padding:12px 14px}.steps li{color:var(--mut);margin:3px 0}.steps li.done{color:var(--txt)}
+.cmd{font:13px var(--mono);color:var(--acc);word-break:break-all}
+.term{font:12px/1.6 var(--mono);color:#b8c0cc;max-height:220px;overflow:auto;background:#0e1014;padding:10px 14px;white-space:pre-wrap}
+.term .t{color:#59616d;margin-right:8px}
+.badge{font:600 11px var(--mono);padding:2px 8px;border-radius:4px}.ok{background:#173326;color:var(--acc)}.pa{background:#3a2c14;color:var(--warn)}.no{background:#3a1717;color:var(--err)}.run{background:#1c2533;color:#8fb4ff}
+.kv{display:flex;gap:22px;flex-wrap:wrap;font:13px var(--mono);color:var(--mut)}.kv b{color:var(--txt);font-weight:600}
+.sum ul{margin:4px 0;padding-left:18px}.sum li{margin:4px 0}
+pre.json{margin:0;max-height:380px;overflow:auto;font:12.5px/1.5 var(--mono);padding:12px 14px;background:#0e1014}
+.k{color:#8fb4ff}.s{color:#a5d6a7}.n{color:#f0b35a}.l{color:#d197f0}
+button{background:none;border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:3px 10px;font:12px var(--mono);cursor:pointer}button:hover{border-color:var(--acc)}
+footer{border-top:1px solid var(--line);padding:16px 0}form{display:flex;gap:10px}
+textarea{flex:1;resize:none;background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:10px;padding:12px 14px;font:inherit;height:52px}textarea:focus{outline:none;border-color:var(--acc)}
+.send{background:var(--acc);color:#06110b;border:0;font-weight:650;padding:0 20px;border-radius:10px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.chips button{color:var(--mut)}
+.hero{text-align:center;padding:60px 0 20px}.hero h1{font-size:34px;letter-spacing:-.03em;margin:0 0 8px}.hero p{color:var(--mut);margin:0}
+.err{color:var(--err)}
+</style>
+</head>
+<body>
+<header><div class="brand">Claw<b>CLI</b> <span style="color:var(--mut);font-weight:400">· natural language → real CLI execution</span></div><span class="pill" id="health">checking…</span></header>
+<main id="main"><div class="wrap" id="chat">
+  <div class="hero" id="hero"><h1>Ask. It runs. You get proof.</h1><p>Every answer comes from a real sandboxed CLI process, with its logs, exit code and validated JSON.</p></div>
+</div></main>
+<footer><div class="wrap">
+  <form id="f"><textarea id="in" placeholder="Crawl https://example.com, extract the important information, summarise it and return JSON"></textarea><button class="send">Run ▸</button></form>
+  <div class="chips">
+    <button data-p="Crawl https://example.com, extract the important information, give me a summary, and return the extracted data in JSON format.">example.com demo</button>
+    <button data-p="Crawl https://books.toscrape.com 6 pages depth 1 and summarise what it sells">books.toscrape.com</button>
+    <button data-p="Extract contact details from https://www.python.org, 5 pages">contact extraction</button>
+    <button data-p="Crawl http://localhost:8000/admin">⚠ SSRF test</button>
+    <button data-p="Crawl https://this-domain-does-not-exist-xyz.com">⚠ bad domain</button>
+  </div>
+</div></footer>
+<script>
+const $=s=>document.querySelector(s), chat=$('#chat');
+fetch('/api/health').then(r=>r.json()).then(h=>$('#health').textContent=h.llm?`LLM: ${h.model}`:'LLM: offline (rule-based mode)').catch(()=>$('#health').textContent='backend offline');
+document.querySelectorAll('.chips button').forEach(b=>b.onclick=()=>{$('#in').value=b.dataset.p;$('#in').focus()});
+$('#in').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('#f').requestSubmit()}});
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const md=s=>esc(s).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/`(.+?)`/g,'<code>$1</code>').replace(/_(.+?)_/g,'<i>$1</i>')
+  .split('\n').map(l=>l.match(/^\s*[-*] /)?`<li>${l.replace(/^\s*[-*] /,'')}</li>`:l?`<p>${l}</p>`:'').join('').replace(/(<li>.*?<\/li>)+/gs,m=>`<ul>${m}</ul>`);
+const hl=o=>esc(JSON.stringify(o,null,2)).replace(/(&quot;(?:\\.|[^&]|&(?!quot;))*?&quot;)(\s*:)?|\b(true|false|null)\b|-?\d+\.?\d*/g,(m,s,c,l)=>s?`<span class="${c?'k':'s'}">${s}</span>${c||''}`:l?`<span class="l">${m}</span>`:`<span class="n">${m}</span>`);
+const add=(cls,html)=>{const d=document.createElement('div');d.className='msg '+cls;d.innerHTML=html;chat.appendChild(d);$('#main').scrollTop=1e9;return d};
+const card=(title,body,extra='')=>`<div class="card"><h4><span>${title}</span><span>${extra}</span></h4>${body}</div>`;
+
+$('#f').onsubmit=async e=>{
+  e.preventDefault(); const msg=$('#in').value.trim(); if(!msg)return; $('#in').value=''; $('#hero')?.remove();
+  add('user',`<div>${esc(msg)}</div>`); const bot=add('bot','<div class="kv">interpreting…</div>');
+  let term=null, runId=null;
+  try{
+    const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg})});
+    if(!r.ok){bot.innerHTML=`<p class="err">${esc((await r.json()).error||r.statusText)}</p>`;return}
+    const rd=r.body.getReader(),dec=new TextDecoder();let buf='';bot.innerHTML='';
+    for(;;){const {value,done}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});
+      let i;while((i=buf.indexOf('\n'))>=0){const ev=JSON.parse(buf.slice(0,i));buf=buf.slice(i+1);handle(ev)}}
+  }catch(err){bot.insertAdjacentHTML('beforeend',`<p class="err">Connection error: ${esc(err.message)}</p>`)}
+
+  function handle(ev){
+    if(ev.type==='plan'&&ev.plan.intent==='crawl_site'){const p=ev.plan;
+      bot.insertAdjacentHTML('beforeend',card('① Intent → Task plan',`<div class="b"><div class="kv"><span>intent <b>${p.intent}</b></span><span>url <b>${esc(p.url)}</b></span><span>pages ≤<b>${p.max_pages}</b></span><span>depth ≤<b>${p.max_depth}</b></span><span>parser <b>${p.parser}</b></span></div><ol class="steps">${p.steps.map(s=>`<li>${esc(s)}</li>`).join('')}</ol></div>`))}
+    else if(ev.type==='exec_start'){runId=ev.run_id;
+      bot.insertAdjacentHTML('beforeend',card('② CLI execution',`<div class="b"><div class="cmd">$ ${esc(ev.command)}</div></div><div class="term" id="t${runId}"></div>`,`<span id="st${runId}" class="badge run">RUNNING</span> <button id="c${runId}">cancel</button>`));
+      term=$('#t'+runId); $('#c'+runId).onclick=()=>fetch('/api/cancel/'+runId,{method:'POST'})}
+    else if(ev.type==='log'&&term){term.insertAdjacentHTML('beforeend',`<div><span class="t">${ev.t.toFixed(2)}s</span>${esc(ev.line)}</div>`);term.scrollTop=1e9}
+    else if(ev.type==='exec_end'){const b=$('#st'+ev.run_id),c=ev.status==='success'?'ok':ev.status==='partial'?'pa':'no';
+      b.className='badge '+c;b.textContent=`${ev.status.toUpperCase()} · exit ${ev.exit_code} · ${ev.duration_sec}s`;$('#c'+ev.run_id)?.remove()}
+    else if(ev.type==='result'){
+      if(!ev.ok){bot.insertAdjacentHTML('beforeend',card('③ Result',`<div class="b"><p class="err"><b>Task did not complete:</b> ${esc(ev.error)}</p>${ev.stderr_tail?.length?`<div class="term">${ev.stderr_tail.map(esc).join('\n')}</div>`:''}</div>`,'<span class="badge no">FAILED</span>'));return}
+      const j=ev.json,s=j.statistics;
+      bot.insertAdjacentHTML('beforeend',card('③ Summary',`<div class="b sum">${md(ev.summary_md)}<div class="kv" style="margin-top:10px"><span>pages <b>${s.pages_crawled}</b></span><span>failed <b>${s.pages_failed}</b></span><span>discovered <b>${s.urls_discovered}</b></span><span>summary by <b>${ev.summary_source}</b></span></div></div>`,ev.partial?'<span class="badge pa">PARTIAL RESULT</span>':'<span class="badge ok">VERIFIED · FROM LIVE RUN</span>'));
+      const id='j'+Math.random().toString(36).slice(2);
+      bot.insertAdjacentHTML('beforeend',card('④ Structured JSON',`<pre class="json">${hl(j)}</pre>`,`<button id="${id}c">copy</button> <button id="${id}d">download</button>`));
+      const txt=JSON.stringify(j,null,2);$('#'+id+'c').onclick=e=>{navigator.clipboard.writeText(txt);e.target.textContent='copied ✓'};
+      $('#'+id+'d').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type:'application/json'}));a.download=`crawl-${j.website.domain}.json`;a.click()}}
+    else if(ev.type==='message'){bot.insertAdjacentHTML('beforeend',`<div class="sum">${md(ev.text)}</div>`)}
+    else if(ev.type==='error'){bot.insertAdjacentHTML('beforeend',card(ev.stage==='validation'?'Input rejected':'Error',`<div class="b err">${esc(ev.error)}</div>`,'<span class="badge no">BLOCKED</span>'))}
+    $('#main').scrollTop=1e9}
+};
+</script>
+</body>
+</html>
